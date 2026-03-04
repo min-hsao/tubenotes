@@ -1,0 +1,14 @@
+The most safety-obsessed AI company on the planet just watched their own AI get weaponized into an autonomous hacking machine.
+Here's what happened. A Chinese state sponsor group called GTG-10002 took Anthropics Claude,
+the AI built to be the safest in the world, and turned it into an autonomous hacking engine.
+It hit about 30 organizations, tech companies, banks, government agencies. How'd they do that?
+They told Claude it was doing authorized defensive security testing. That's it.
+No fancy exploit, they just lied to it. We're just like 90% of AI hacking. And Claude went to work?
+Recon, vulnerability scanning, custom exploit code, credential harvesting, data extraction,
+80% to 90% of the campaign ran without a human touching it. Thousands of requests per second.
+There were only about four to six human decisions in the entire operation.
+Anthropic themselves have said that the barrier to performing these sophisticated
+cyber attacks has dropped substantially. One AI can now do the work of entire teams of
+experienced hackers. So yeah, the world's biggest AI safety company just got hacked by their own AI.
+And now, less experienced groups can launch nation-state level attacks. That's where we are.
+Fun, make sure you follow and subscribe to keep up to date.
