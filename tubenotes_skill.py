@@ -45,7 +45,6 @@ class TubeNotesSkill:
             duration = parts[2]
 
             # 2. Download audio and transcribe with local Whisper
-            # Use a temporary directory for the audio/transcript
             with tempfile.TemporaryDirectory() as tmpdir:
                 audio_path = os.path.join(tmpdir, "audio.mp3")
                 download_cmd = [
@@ -54,25 +53,34 @@ class TubeNotesSkill:
                 ]
                 subprocess.run(download_cmd, capture_output=True)
 
-                # Transcribe with Whisper CLI
+                # Transcribe with Whisper CLI - generating JSON for timestamps
                 whisper_cmd = [
                     "/opt/homebrew/bin/whisper", audio_path,
-                    "--model", "base", "--output_dir", tmpdir, "--output_format", "txt"
+                    "--model", "base", "--output_dir", tmpdir, "--output_format", "json"
                 ]
                 subprocess.run(whisper_cmd, capture_output=True)
 
-                transcript_path = os.path.join(tmpdir, "audio.txt")
-                transcript = ""
-                if os.path.exists(transcript_path):
-                    with open(transcript_path, 'r') as f:
-                        transcript = f.read()
+                transcript_json_path = os.path.join(tmpdir, "audio.json")
+                transcript_with_timestamps = ""
+                if os.path.exists(transcript_json_path):
+                    with open(transcript_json_path, 'r') as f:
+                        data = json.load(f)
+                        for segment in data.get('segments', []):
+                            start = int(segment['start'])
+                            # Format seconds to M:SS or H:MM:SS
+                            ts = ""
+                            if start >= 3600:
+                                ts = f"{start//3600}:{(start%3600)//60:02d}:{start%60:02d}"
+                            else:
+                                ts = f"{start//60}:{start%60:02d}"
+                            transcript_with_timestamps += f"[{ts}] {segment['text']}\n"
 
             return {
                 "title": title,
                 "channel": uploader,
                 "duration": duration,
                 "url": url,
-                "transcript": transcript
+                "transcript": transcript_with_timestamps
             }
         except Exception as e:
             return {"error": str(e)}
@@ -81,10 +89,18 @@ class TubeNotesSkill:
         # Use the transcript for summarization if available
         context = video_info.get('transcript', '')
         if not context:
-            # Fallback to title/description if transcript failed
             context = f"Title: {video_info['title']}"
         
-        prompt = f"Summarize this YouTube video based on the following transcript. Keep it to punchy bullet points. Transcript: {context}"
+        # Explicit instruction to include timestamps and the source link
+        prompt = (
+            f"Summarize this YouTube video: {video_info['url']}\n\n"
+            f"Based on the following transcript (which includes timestamps in [M:SS] format), "
+            "provide a punchy bulleted summary. \n"
+            "CRITICAL: For each major point, include the timestamp from the transcript as a link in this format: "
+            "[M:SS](URL&t=S) where URL is the video link and S is the total seconds. \n"
+            "Include the original video link at the bottom.\n\n"
+            f"Transcript:\n{context}"
+        )
         
         try:
             cmd = ["/opt/homebrew/bin/gemini", prompt]
@@ -96,26 +112,23 @@ class TubeNotesSkill:
     def save_to_apple_notes(self, summary: str, title: str) -> bool:
         """Save summary to Apple Notes using the bin/notes CLI."""
         try:
-            # Use the notes script from ~/clawd/bin as per USER.md
             notes_script = os.path.expanduser("~/clawd/bin/notes")
-            
             if not os.path.exists(notes_script):
-                print(f"Notes script not found at {notes_script}")
                 return False
 
-            # The notes script usage: notes add --title "Title" --body "Body"
-            # Assuming it handles folder 'YT Summaries' or we just add it to the default
-            subprocess.run([notes_script, "add", "--title", title, "--body", summary], capture_output=True)
+            # Use 'create' command: create <name> <body> [folder]
+            # Convert simple markdown to HTML for Notes
+            html_body = summary.replace("\n", "<br>").replace("**", "<b>").replace("`", "<code>")
+            subprocess.run([notes_script, "create", title, html_body, DEFAULT_FOLDER], capture_output=True)
             return True
         except Exception as e:
-            print(f"Error saving to Apple Notes: {e}")
             return False
 
     def handle_callback(self, callback_data: str, summary: str, title: str) -> str:
         """Handle button clicks."""
         if callback_data.startswith("save:"):
             if self.save_to_apple_notes(summary, title):
-                return "✅ Saved to Apple Notes (Folder: YT Summaries)."
+                return f"✅ Saved to Apple Notes (Folder: {DEFAULT_FOLDER})."
             else:
                 return "❌ Failed to save to Apple Notes. Check bin/notes script."
         return "Action cancelled."
@@ -123,4 +136,9 @@ class TubeNotesSkill:
 if __name__ == "__main__":
     import sys
     skill = TubeNotesSkill()
-    print(json.dumps(skill.handle_message(sys.argv[1]), indent=2))
+    # Basic CLI wrapper for testing
+    if len(sys.argv) > 1:
+        url = sys.argv[1]
+        info = skill.get_video_info(url)
+        summary = skill.generate_summary(info)
+        print(summary)
